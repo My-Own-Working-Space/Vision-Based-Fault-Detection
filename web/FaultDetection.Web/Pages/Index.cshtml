@@ -1,0 +1,87 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "AI UAV Fault Management";
+}
+
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-map"></i> Bản đồ Lưới điện (110kV)</h5>
+                <span class="badge bg-light text-primary" id="status-badge">Live</span>
+            </div>
+            <div class="card-body p-0">
+                <div id="map" style="height: 500px; border-radius: 0 0 4px 4px;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 mb-4 h-100">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">Thống kê Nhanh</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-3 border-bottom pb-2">
+                    <span>Tổng số cột:</span>
+                    <span class="fw-bold">120</span>
+                </div>
+                <div class="d-flex justify-content-between mb-3 border-bottom pb-2">
+                    <span>Lỗi phát hiện:</span>
+                    <span class="text-danger fw-bold" id="fault-count">0</span>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span>Đã xử lý:</span>
+                    <span class="text-success fw-bold">12</span>
+                </div>
+                
+                <hr>
+                <h6>Phân loại lỗi</h6>
+                <div class="progress mb-2" style="height: 10px;">
+                    <div class="progress-bar bg-danger" role="progressbar" style="width: 45%" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <small class="text-muted">Sứ nứt (45%)</small>
+                <div class="progress mt-3 mb-2" style="height: 10px;">
+                    <div class="progress-bar bg-warning" role="progressbar" style="width: 30%" aria-valuenow="30" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <small class="text-muted">Rỉ sét (30%)</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white border-bottom py-3">
+                <h5 class="mb-0">Danh sách Cảnh báo mới nhất</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Mã Trụ (Tower)</th>
+                                <th>Loại Lỗi</th>
+                                <th>Độ tin cậy</th>
+                                <th>Thời gian</th>
+                                <th>Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fault-rows">
+                            <!-- Rows will be injected by JavaScript -->
+                            <tr>
+                                <td colspan="6" class="text-center py-4">Đang tải dữ liệu...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/dashboard.js"></script>
+}

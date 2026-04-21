@@ -1,0 +1,24 @@
+# .NET
+[Bb]in/
+[Oo]bj/
+*.user
+*.userosscache
+*.sln.docuser
+FaultDetection.db
+FaultDetection.db-shm
+FaultDetection.db-wal
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+training/runs/
+training/*.pt
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
