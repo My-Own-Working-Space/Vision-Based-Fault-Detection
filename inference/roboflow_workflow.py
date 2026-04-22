@@ -4,12 +4,16 @@ import json
 import base64
 import requests
 from inference_sdk import InferenceHTTPClient
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ==========================================
 # 1. Cấu hình Roboflow Workflow
 # ==========================================
 API_URL = "https://serverless.roboflow.com"
-API_KEY = "3VRKN4GLeDVKPJ9eQFkG"
+API_KEY = os.getenv("ROBOFLOW_API_KEY")
 WORKSPACE = "pham-hoang-minh-chau"
 WORKFLOW_ID = "general-segmentation-api"
 
