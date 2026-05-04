@@ -1,27 +1,24 @@
-# .NET
-[Bb]in/
-[Oo]bj/
-*.user
-*.userosscache
-*.sln.docuser
-FaultDetection.db
-FaultDetection.db-shm
-FaultDetection.db-wal
-
 # Python
-.venv/
 __pycache__/
 *.py[cod]
 *$py.class
-training/runs/
-training/*.pt
+.venv/
+env/
+venv/
+ENV/
 
-# VS Code
+# Data & Models
+dataset/train/
+dataset/valid/
+runs/
+*.pth
+*.pt
+
+# Environment & IDE
+.env
 .vscode/
+.idea/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Environment
-.env
