@@ -8,8 +8,7 @@ venv/
 ENV/
 
 # Data & Models
-dataset/train/
-dataset/valid/
+dataset/
 runs/
 *.pth
 *.pt

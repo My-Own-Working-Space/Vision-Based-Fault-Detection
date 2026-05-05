@@ -1,11 +1,12 @@
+import copy
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
-import os
-import time
 import helper_utils as helper_utils
+
 
 TRAIN_PATH = "../dataset/train"
 VAL_PATH = "../dataset/valid"
@@ -14,6 +15,7 @@ BATCH_SIZE = 16
 NUM_EPOCHS = 20
 LEARNING_RATE = 0.001
 NUM_CLASSES = 2
+IMAGE_SIZE = 64
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device} ")
@@ -24,6 +26,7 @@ std = (0.229, 0.224, 0.225)
 
 def define_transformation(mean, std):
     train_transformations = transforms.Compose([
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.RandomHorizontalFlip(0.5),
         transforms.RandomVerticalFlip(0.5),
         transforms.RandomRotation(15),
@@ -32,6 +35,7 @@ def define_transformation(mean, std):
     ])
 
     val_transformations = transforms.Compose([
+        transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize(mean, std)
     ])
@@ -80,7 +84,7 @@ verify_cnn_block = CNNBlock(in_channels=3, out_channels=16)
 print("Block Structure:\n")
 print(verify_cnn_block)
 
-dummy_input = torch.randn(1, 3, 32, 32)
+dummy_input = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE)
 print(f"\nInput tensor shape:  {dummy_input.shape}")
 
 output = verify_cnn_block(dummy_input)
@@ -97,7 +101,7 @@ class SimpleCNN(nn.Module):
         
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(in_features=128*4*4, out_features=512),
+            nn.Linear(in_features=128 * (IMAGE_SIZE // 8) * (IMAGE_SIZE // 8), out_features=512),
             nn.ReLU(),
             nn.Dropout(0.6),
             nn.Linear(512, num_classes)
@@ -116,7 +120,7 @@ verify_simple_cnn = SimpleCNN(num_classes=15)
 print("Model Structure:\n")
 print(verify_simple_cnn)
 
-dummy_input = torch.randn(64, 3, 32, 32)
+dummy_input = torch.randn(64, 3, IMAGE_SIZE, IMAGE_SIZE)
 print(f"\nInput tensor shape:  {dummy_input.shape}")
 
 output = verify_simple_cnn(dummy_input)
@@ -142,7 +146,10 @@ def train_epoch(model, train_loader, loss_function, optimizer, device):
 
     return running_loss / len(train_loader)
 
-helper_utils.verify_training_process(SimpleCNN, train_loader, loss_function, optimizer, device)
+loss_function = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+helper_utils.verify_training_process(SimpleCNN, train_loader, loss_function, train_epoch, device)
 
 def validate_epoch(model, val_loader, loss_function, device):
     model.eval()
@@ -163,53 +170,29 @@ def validate_epoch(model, val_loader, loss_function, device):
 
     return running_loss / len(val_loader), correct / total
 
-helper_utils.verify_validation_process(SimpleCNN, val_loader, loss_function, device)
+helper_utils.verify_validation_process(SimpleCNN, val_loader, loss_function, validate_epoch, device)
 
 def training_loop(model, train_loader, val_loader, loss_function, optimizer, num_epochs, device):
-    """
-    Trains and validates a PyTorch neural network model.
-
-    Args:
-        model (torch.nn.Module): The model to be trained.
-        train_loader (torch.utils.data.DataLoader): DataLoader for the training set.
-        val_loader (torch.utils.data.DataLoader): DataLoader for the validation set.
-        loss_function (callable): The loss function.
-        optimizer (torch.optim.Optimizer): The optimization algorithm.
-        num_epochs (int): The total number of epochs to train for.
-        device (torch.device): The device (e.g., 'cuda' or 'cpu') to run training on.
-
-    Returns:
-        tuple: A tuple containing the best trained model and a list of metrics
-               (train_losses, val_losses, val_accuracies).
-    """
-    # Move the model to the specified device (CPU or GPU)
     model.to(device)
     
-    # Initialize variables to track the best performing model
     best_val_accuracy = 0.0
     best_model_state = None
     best_epoch = 0
     
-    # Initialize lists to store training and validation metrics
     train_losses, val_losses, val_accuracies = [], [], []
     
     print("--- Training Started ---")
     
-    # Loop over the specified number of epochs
     for epoch in range(num_epochs):
-        # Perform one epoch of training
         epoch_loss = train_epoch(model, train_loader, loss_function, optimizer, device)
         train_losses.append(epoch_loss)
         
-        # Perform one epoch of validation
         epoch_val_loss, epoch_accuracy = validate_epoch(model, val_loader, loss_function, device)
         val_losses.append(epoch_val_loss)
         val_accuracies.append(epoch_accuracy)
         
-        # Print the metrics for the current epoch
         print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {epoch_loss:.4f}, Val Loss: {epoch_val_loss:.4f}, Val Accuracy: {epoch_accuracy:.2f}%")
         
-        # Check if the current model is the best one so far
         if epoch_accuracy > best_val_accuracy:
             best_val_accuracy = epoch_accuracy
             best_epoch = epoch + 1
@@ -218,18 +201,14 @@ def training_loop(model, train_loader, val_loader, loss_function, optimizer, num
             
     print("--- Finished Training ---")
     
-    # Load the best model weights before returning
     if best_model_state:
         print(f"\n--- Returning best model with {best_val_accuracy:.2f}% validation accuracy, achieved at epoch {best_epoch} ---")
         model.load_state_dict(best_model_state)
     
-    # Consolidate all metrics into a single list
     metrics = [train_losses, val_losses, val_accuracies]
     
-    # Return the trained model and the collected metrics
     return model, metrics
 
-# Start the training process by calling the training loop function
 trained_model, training_metrics = training_loop(
     model=model, 
     train_loader=train_loader, 
@@ -240,19 +219,19 @@ trained_model, training_metrics = training_loop(
     device=device
 )
 
-# Visualize the training metrics (loss and accuracy)
 print("\n--- Training Plots ---\n")
 helper_utils.plot_training_metrics(training_metrics)
 
-# Import the preview function that demonstrates concepts from the next course
-from c2_preview.c2_preview import course_2_preview
+from validate import train_and_validate
 
-# This helper function runs a training loop using a powerful strategy that will be taught
-# in the next course. Run this cell to see the improved results in action.
-trained_model = course_2_preview(
+trained_model = train_and_validate(
     train_dataset, 
     val_dataset, 
     loss_function,
     device,
     num_epochs=5
     )
+
+# --- SAVE THE MODEL ---
+print(f"\n--- Saving the final model to {MODEL_SAVE_PATH} ---")
+torch.save(trained_model.state_dict(), MODEL_SAVE_PATH)
