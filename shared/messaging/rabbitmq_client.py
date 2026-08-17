@@ -5,6 +5,7 @@ Provides reusable connection/channel creation with dead-letter exchange
 configuration and separate queues for edge and server runtimes.
 """
 
+import json
 import time
 from typing import Optional, Callable
 
@@ -68,6 +69,10 @@ class RabbitMQClient:
         exchange: str = "ai.analysis",
         edge_queue: str = "ai.analysis.edge.requested",
         server_queue: str = "ai.analysis.server.requested",
+        edge_image_queue: str = "ai.analysis.edge.image.requested",
+        edge_video_queue: str = "ai.analysis.edge.video.requested",
+        server_image_queue: str = "ai.analysis.server.image.requested",
+        server_video_queue: str = "ai.analysis.server.video.requested",
         dlx_exchange: str = "ai.analysis.dlx",
         dlq_queue: str = "ai.analysis.dead-letter",
     ) -> None:
@@ -141,9 +146,24 @@ class RabbitMQClient:
             routing_key="identity.event.aianalysisrequestedevent.server",
         )
 
+        # Media-specific work queues. The runtime ingress consumer dispatches
+        # into these queues, allowing images and videos to run concurrently.
+        for queue in (
+            edge_image_queue,
+            edge_video_queue,
+            server_image_queue,
+            server_video_queue,
+        ):
+            ch.queue_declare(
+                queue=queue,
+                durable=True,
+                arguments={"x-dead-letter-exchange": dlx_exchange},
+            )
+
         logger.info(
             f"RabbitMQ infrastructure ready: exchange={exchange}, "
             f"edge_queue={edge_queue}, server_queue={server_queue}, "
+            f"media_queues={[edge_image_queue, edge_video_queue, server_image_queue, server_video_queue]}, "
             f"backend_exchange={backend_exchange}",
             extra={"event": "rabbitmq_infrastructure_ready"},
         )
@@ -204,6 +224,10 @@ def consume_with_reconnect(
     exchange: str = "ai.analysis",
     edge_queue: str = "ai.analysis.edge.requested",
     server_queue: str = "ai.analysis.server.requested",
+    edge_image_queue: str = "ai.analysis.edge.image.requested",
+    edge_video_queue: str = "ai.analysis.edge.video.requested",
+    server_image_queue: str = "ai.analysis.server.image.requested",
+    server_video_queue: str = "ai.analysis.server.video.requested",
     dlx_exchange: str = "ai.analysis.dlx",
     dlq_queue: str = "ai.analysis.dead-letter",
     heartbeat: int = 600,
@@ -230,6 +254,10 @@ def consume_with_reconnect(
                 exchange=exchange,
                 edge_queue=edge_queue,
                 server_queue=server_queue,
+                edge_image_queue=edge_image_queue,
+                edge_video_queue=edge_video_queue,
+                server_image_queue=server_image_queue,
+                server_video_queue=server_video_queue,
                 dlx_exchange=dlx_exchange,
                 dlq_queue=dlq_queue,
             )
@@ -250,3 +278,32 @@ def consume_with_reconnect(
             client.close()
 
         time.sleep(reconnect_delay)
+
+
+def create_media_dispatcher(image_queue: str, video_queue: str) -> Callable:
+    """Route an ingress message to a durable media-specific work queue."""
+
+    def dispatch(ch, method, properties, body):
+        try:
+            payload = json.loads(body.decode("utf-8"))
+            media_type = str(
+                payload.get("mediaType", payload.get("MediaType", "Image"))
+            ).lower()
+            target_queue = video_queue if media_type == "video" else image_queue
+            published = ch.basic_publish(
+                exchange="",
+                routing_key=target_queue,
+                body=body,
+                properties=properties,
+                mandatory=True,
+            )
+            if published is False:
+                raise RuntimeError(f"RabbitMQ rejected dispatch to {target_queue}")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, TypeError):
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+        except Exception:
+            logger.exception("Failed to dispatch media job")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
+    return dispatch

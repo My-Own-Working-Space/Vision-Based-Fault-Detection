@@ -2,16 +2,28 @@ import json
 import os
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from PIL import Image
 
 from server_pc.app.analysis_runner import HarnessAnalysisRunner
 from server_pc.app.consumer import create_server_consumer
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_IMAGE = REPO_ROOT / "dataset/train/Broken-Glass/su110kv_vo--37-_jpg.rf.h3PRWvHBOg3cOTG3f0cZ.jpg"
+
+
+def make_fixture_image() -> bytes:
+    """Create a self-contained JPEG fixture without relying on ignored datasets."""
+    buffer = BytesIO()
+    Image.new("RGB", (64, 48), color="white").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+FIXTURE_IMAGE_BYTES = make_fixture_image()
 
 
 def make_settings(tmpdir):
@@ -90,7 +102,7 @@ class ServerHarnessFlowTests(unittest.TestCase):
             )
 
             output = runner.analyze_media(
-                file_bytes=FIXTURE_IMAGE.read_bytes(),
+                file_bytes=FIXTURE_IMAGE_BYTES,
                 extension=".jpg",
                 media_type="Image",
             )
@@ -118,9 +130,16 @@ class ServerHarnessFlowTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
                 checkpoint_dir=Path(settings.harness_checkpoint_dir),
             )
-            download_media.return_value = (FIXTURE_IMAGE.read_bytes(), ".jpg")
+            download_media.return_value = (FIXTURE_IMAGE_BYTES, ".jpg")
 
-            with patch.dict(os.environ, {"AI_SERVICE_KEY": "test-service-key"}):
+            with patch.dict(
+                os.environ,
+                {
+                    "AI_SERVICE_KEY": "test-service-key",
+                    "AI_ARTIFACT_DIR": settings.artifact_dir,
+                    "HARNESS_CHECKPOINT_DIR": settings.harness_checkpoint_dir,
+                },
+            ):
                 from server_pc.app import main as server_main
 
                 old_settings = server_main.settings
@@ -164,9 +183,16 @@ class ServerHarnessFlowTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
                 checkpoint_dir=Path(settings.harness_checkpoint_dir),
             )
-            download_media.return_value = (FIXTURE_IMAGE.read_bytes(), ".jpg")
+            download_media.return_value = (FIXTURE_IMAGE_BYTES, ".jpg")
 
-            with patch.dict(os.environ, {"AI_SERVICE_KEY": "test-service-key"}):
+            with patch.dict(
+                os.environ,
+                {
+                    "AI_SERVICE_KEY": "test-service-key",
+                    "AI_ARTIFACT_DIR": settings.artifact_dir,
+                    "HARNESS_CHECKPOINT_DIR": settings.harness_checkpoint_dir,
+                },
+            ):
                 from fastapi.testclient import TestClient
                 from server_pc.app import main as server_main
 
@@ -214,7 +240,7 @@ class ServerHarnessFlowTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
                 checkpoint_dir=Path(settings.harness_checkpoint_dir),
             )
-            download_media.return_value = (FIXTURE_IMAGE.read_bytes(), ".jpg")
+            download_media.return_value = (FIXTURE_IMAGE_BYTES, ".jpg")
             callback = create_server_consumer(runner, settings)
             channel = FakeChannel()
             method = SimpleNamespace(delivery_tag="delivery-1")
@@ -253,7 +279,7 @@ class ServerHarnessFlowTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
                 checkpoint_dir=Path(settings.harness_checkpoint_dir),
             )
-            download_media.return_value = (FIXTURE_IMAGE.read_bytes(), ".jpg")
+            download_media.return_value = (FIXTURE_IMAGE_BYTES, ".jpg")
             from shared.messaging.result_publisher import ResultPublishError
             publish_analysis_result.side_effect = ResultPublishError("publish failed")
             callback = create_server_consumer(runner, settings)

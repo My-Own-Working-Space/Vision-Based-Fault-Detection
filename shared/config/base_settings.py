@@ -29,6 +29,18 @@ class BaseAppSettings(BaseSettings):
     server_queue_name: str = Field(
         "ai.analysis.server.requested", alias="SERVER_QUEUE_NAME"
     )
+    edge_image_queue_name: str = Field(
+        "ai.analysis.edge.image.requested", alias="EDGE_IMAGE_QUEUE_NAME"
+    )
+    edge_video_queue_name: str = Field(
+        "ai.analysis.edge.video.requested", alias="EDGE_VIDEO_QUEUE_NAME"
+    )
+    server_image_queue_name: str = Field(
+        "ai.analysis.server.image.requested", alias="SERVER_IMAGE_QUEUE_NAME"
+    )
+    server_video_queue_name: str = Field(
+        "ai.analysis.server.video.requested", alias="SERVER_VIDEO_QUEUE_NAME"
+    )
     dead_letter_exchange: str = Field(
         "ai.analysis.dlx", alias="DEAD_LETTER_EXCHANGE"
     )

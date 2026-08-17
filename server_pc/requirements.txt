@@ -20,5 +20,8 @@ pika==1.3.2
 inference-sdk==0.64.8
 requests>=2.31.0
 
+# API testing
+httpx==0.28.1
+
 # Logging
 python-json-logger>=2.0.0

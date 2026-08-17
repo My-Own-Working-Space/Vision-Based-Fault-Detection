@@ -183,10 +183,20 @@ RabbitMQ binding kỳ vọng:
 
 ```text
 identity-exchange -> ai.analysis.server.requested -> identity.event.aianalysisrequestedevent.server
+ai.analysis.server.requested -> dispatcher -> ai.analysis.server.image.requested
+ai.analysis.server.requested -> dispatcher -> ai.analysis.server.video.requested
+identity-exchange -> ai.analysis.edge.requested -> identity.event.aianalysisrequestedevent.edge
+ai.analysis.edge.requested -> dispatcher -> ai.analysis.edge.image.requested
+ai.analysis.edge.requested -> dispatcher -> ai.analysis.edge.video.requested
 identity-exchange -> ai.analysis.result -> identity.event.aianalysisresultevent
 ai.analysis.result.retry --TTL--> identity-exchange(identity.event.aianalysisresultevent)
 ai.analysis.result.dead-letter <- DLX khi result payload invalid hoặc xử lý vượt retry limit
 ```
+
+Mỗi runtime chạy một ingress dispatcher và hai consumer độc lập cho ảnh/video.
+Vì vậy một video đang xử lý không giữ consumer ảnh. Có thể scale từng runtime bằng
+nhiều process/container; RabbitMQ sẽ phân phối job trong từng media queue cho các
+consumer cạnh tranh.
 
 ## Kiểm thử (Testing)
 

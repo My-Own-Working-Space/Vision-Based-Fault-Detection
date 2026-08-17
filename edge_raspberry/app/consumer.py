@@ -17,7 +17,10 @@ from shared.schemas.analysis_request import AnalysisRequest, PreferredModel
 from shared.services.callback_service import send_callback, CallbackError
 from shared.services.media_downloader import download_media, DownloadError
 from shared.services.result_mapper import map_success_result, map_failure_result
-from shared.messaging.rabbitmq_client import consume_with_reconnect
+from shared.messaging.rabbitmq_client import (
+    consume_with_reconnect,
+    create_media_dispatcher,
+)
 from shared.utils.logging import (
     get_logger,
     set_correlation_context,
@@ -228,35 +231,55 @@ def _send_failure_callback(request, settings, error_code, error_message):
 
 
 def start_edge_consumer(detector, settings):
-    """Start the edge RabbitMQ consumer in a background thread.
+    """Start ingress, image, and video consumers in independent threads.
 
     Args:
         detector: Initialized EdgeYoloDetector instance.
         settings: EdgeSettings instance.
     """
-    callback = create_edge_consumer(detector, settings)
+    work_callback = create_edge_consumer(detector, settings)
+    dispatch_callback = create_media_dispatcher(
+        settings.edge_image_queue_name, settings.edge_video_queue_name
+    )
+    common = dict(
+        host=settings.rabbitmq_host,
+        port=settings.rabbitmq_port,
+        user=settings.rabbitmq_user,
+        password=settings.rabbitmq_pass,
+        exchange=settings.rabbitmq_exchange,
+        edge_queue=settings.edge_queue_name,
+        server_queue=settings.server_queue_name,
+        edge_image_queue=settings.edge_image_queue_name,
+        edge_video_queue=settings.edge_video_queue_name,
+        server_image_queue=settings.server_image_queue_name,
+        server_video_queue=settings.server_video_queue_name,
+        dlx_exchange=settings.dead_letter_exchange,
+        dlq_queue=settings.dead_letter_queue,
+        heartbeat=settings.rabbitmq_heartbeat,
+        prefetch_count=settings.rabbitmq_prefetch_count,
+    )
 
-    def run():
+    def run(queue_name, callback):
         consume_with_reconnect(
-            host=settings.rabbitmq_host,
-            port=settings.rabbitmq_port,
-            user=settings.rabbitmq_user,
-            password=settings.rabbitmq_pass,
-            queue_name=settings.edge_queue_name,
+            **common,
+            queue_name=queue_name,
             callback=callback,
-            exchange=settings.rabbitmq_exchange,
-            edge_queue=settings.edge_queue_name,
-            server_queue=settings.server_queue_name,
-            dlx_exchange=settings.dead_letter_exchange,
-            dlq_queue=settings.dead_letter_queue,
-            heartbeat=settings.rabbitmq_heartbeat,
-            prefetch_count=settings.rabbitmq_prefetch_count,
         )
 
-    thread = threading.Thread(target=run, daemon=True, name="edge-consumer")
-    thread.start()
-    logger.info(
-        "Edge RabbitMQ consumer started",
-        extra={"event": "consumer_started", "queue": settings.edge_queue_name},
+    consumers = (
+        (settings.edge_queue_name, dispatch_callback, "edge-dispatcher"),
+        (settings.edge_image_queue_name, work_callback, "edge-image-consumer"),
+        (settings.edge_video_queue_name, work_callback, "edge-video-consumer"),
     )
-    return thread
+    threads = []
+    for queue_name, callback, name in consumers:
+        thread = threading.Thread(
+            target=run, args=(queue_name, callback), daemon=True, name=name
+        )
+        thread.start()
+        threads.append(thread)
+        logger.info(
+            "Edge RabbitMQ consumer started",
+            extra={"event": "consumer_started", "queue": queue_name},
+        )
+    return threads
