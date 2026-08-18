@@ -19,12 +19,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 
 from server_pc.app.settings import settings
+from server_pc.app.metrics import metrics_response
 from shared.utils.logging import (
     setup_logging,
     get_logger,
@@ -111,6 +112,12 @@ def ready():
         "model_name": analysis_runner.model_name,
         "model_version": analysis_runner.model_version,
     }
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    body, content_type = metrics_response()
+    return Response(content=body, headers={"Content-Type": content_type})
 
 
 class AnalyzePayload(BaseModel):

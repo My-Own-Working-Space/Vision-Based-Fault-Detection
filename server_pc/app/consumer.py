@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from json import JSONDecodeError
 
 import pika
+from server_pc.app.metrics import AI_JOBS_TOTAL, AI_JOB_DURATION
 from shared.schemas.analysis_request import AnalysisRequest, PreferredModel
 from shared.services.media_downloader import (
     download_media,
@@ -52,10 +53,12 @@ def create_server_consumer(analysis_runner, settings):
         """Handle incoming analysis request messages."""
         start_time = time.monotonic()
         retry_count = _get_retry_count(properties)
+        media_type_label = "unknown"
 
         try:
             payload = json.loads(body.decode("utf-8"))
             request = AnalysisRequest(**payload)
+            media_type_label = request.media_type.value
 
             # Set logging context
             set_correlation_context(
@@ -119,12 +122,18 @@ def create_server_consumer(analysis_runner, settings):
                         jpeg_quality=settings.artifact_jpeg_quality,
                     )
             except DownloadError as e:
+                AI_JOBS_TOTAL.labels(
+                    status="failed", media_type=media_type_label
+                ).inc()
                 result = _build_failure_result(
                     request, "MEDIA_DOWNLOAD_FAILED", str(e)
                 )
                 _publish_result_and_finalize(ch, method.delivery_tag, result, settings)
                 return
             except Exception as e:
+                AI_JOBS_TOTAL.labels(
+                    status="failed", media_type=media_type_label
+                ).inc()
                 logger.error(
                     f"Model inference failed for job {request.request_id}: {e}",
                     exc_info=True,
@@ -143,6 +152,12 @@ def create_server_consumer(analysis_runner, settings):
             processing_time_ms = int(
                 (time.monotonic() - start_time) * 1000
             )
+            AI_JOB_DURATION.labels(media_type=media_type_label).observe(
+                processing_time_ms / 1000.0
+            )
+            AI_JOBS_TOTAL.labels(
+                status="success", media_type=media_type_label
+            ).inc()
 
             result = map_success_result(
                 request_id=request.request_id,
@@ -183,6 +198,9 @@ def create_server_consumer(analysis_runner, settings):
                 )
 
         except JSONDecodeError as e:
+            AI_JOBS_TOTAL.labels(
+                status="failed", media_type=media_type_label
+            ).inc()
             logger.error(
                 f"Invalid JSON in message: {e}",
                 extra={"event": "job_invalid_json"},
@@ -190,6 +208,9 @@ def create_server_consumer(analysis_runner, settings):
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
         except Exception as e:
+            AI_JOBS_TOTAL.labels(
+                status="failed", media_type=media_type_label
+            ).inc()
             logger.error(
                 f"Unexpected error processing message: {e}",
                 exc_info=True,
