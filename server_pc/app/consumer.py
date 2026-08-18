@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from json import JSONDecodeError
 
 import pika
-from server_pc.app.metrics import AI_JOBS_TOTAL, AI_JOB_DURATION
+from pydantic import ValidationError
+from server_pc.app.metrics import observe_job_duration, record_job
 from shared.schemas.analysis_request import AnalysisRequest, PreferredModel
 from shared.services.media_downloader import (
     download_media,
@@ -54,6 +55,7 @@ def create_server_consumer(analysis_runner, settings):
         start_time = time.monotonic()
         retry_count = _get_retry_count(properties)
         media_type_label = "unknown"
+        job_status = None
 
         try:
             payload = json.loads(body.decode("utf-8"))
@@ -75,6 +77,7 @@ def create_server_consumer(analysis_runner, settings):
             if request.preferred_model and PreferredModel.is_edge(
                 request.preferred_model
             ):
+                job_status = "rejected"
                 logger.warning(
                     f"Job {request.request_id} has preferredModel="
                     f"{request.preferred_model}, rejecting from server queue",
@@ -122,18 +125,14 @@ def create_server_consumer(analysis_runner, settings):
                         jpeg_quality=settings.artifact_jpeg_quality,
                     )
             except DownloadError as e:
-                AI_JOBS_TOTAL.labels(
-                    status="failed", media_type=media_type_label
-                ).inc()
+                job_status = "failed"
                 result = _build_failure_result(
                     request, "MEDIA_DOWNLOAD_FAILED", str(e)
                 )
                 _publish_result_and_finalize(ch, method.delivery_tag, result, settings)
                 return
             except Exception as e:
-                AI_JOBS_TOTAL.labels(
-                    status="failed", media_type=media_type_label
-                ).inc()
+                job_status = "failed"
                 logger.error(
                     f"Model inference failed for job {request.request_id}: {e}",
                     exc_info=True,
@@ -152,13 +151,6 @@ def create_server_consumer(analysis_runner, settings):
             processing_time_ms = int(
                 (time.monotonic() - start_time) * 1000
             )
-            AI_JOB_DURATION.labels(media_type=media_type_label).observe(
-                processing_time_ms / 1000.0
-            )
-            AI_JOBS_TOTAL.labels(
-                status="success", media_type=media_type_label
-            ).inc()
-
             result = map_success_result(
                 request_id=request.request_id,
                 media_id=request.media_id,
@@ -180,6 +172,10 @@ def create_server_consumer(analysis_runner, settings):
 
             try:
                 _publish_result_and_finalize(ch, method.delivery_tag, result, settings)
+                job_status = "success"
+                observe_job_duration(
+                    media_type_label, processing_time_ms / 1000.0
+                )
                 logger.info(
                     f"Job {request.request_id} completed successfully "
                     f"in {processing_time_ms}ms",
@@ -189,6 +185,7 @@ def create_server_consumer(analysis_runner, settings):
                     },
                 )
             except ResultPublishError:
+                job_status = "failed"
                 logger.error(
                     f"Result publish failed for job {request.request_id}",
                     extra={"event": "job_result_publish_failed"},
@@ -198,19 +195,26 @@ def create_server_consumer(analysis_runner, settings):
                 )
 
         except JSONDecodeError as e:
-            AI_JOBS_TOTAL.labels(
-                status="failed", media_type=media_type_label
-            ).inc()
+            job_status = "rejected"
             logger.error(
                 f"Invalid JSON in message: {e}",
                 extra={"event": "job_invalid_json"},
             )
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
+        except ValidationError as e:
+            job_status = "rejected"
+            logger.error(
+                f"Invalid analysis request: {e}",
+                extra={"event": "job_invalid_request"},
+            )
+            _retry_or_dead_letter(
+                ch, method.delivery_tag, body, properties, settings, retry_count
+            )
+
         except Exception as e:
-            AI_JOBS_TOTAL.labels(
-                status="failed", media_type=media_type_label
-            ).inc()
+            if job_status is None:
+                job_status = "failed"
             logger.error(
                 f"Unexpected error processing message: {e}",
                 exc_info=True,
@@ -221,6 +225,8 @@ def create_server_consumer(analysis_runner, settings):
             )
 
         finally:
+            if job_status is not None:
+                record_job(job_status, media_type_label)
             clear_correlation_context()
 
     return on_message

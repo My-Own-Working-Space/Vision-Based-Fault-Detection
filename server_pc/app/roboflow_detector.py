@@ -14,6 +14,7 @@ from shared.schemas.analysis_result import Detection, DetectionResult
 from shared.services.roboflow_workflow_client import run_evn_object_detection_workflow
 from shared.utils.bbox import calculate_iou
 from shared.utils.logging import get_logger
+from server_pc.app.metrics import observe_inference_duration
 
 logger = get_logger("server_roboflow_detector")
 
@@ -67,16 +68,17 @@ class ServerRoboflowWorkflowDetector:
     def detect_image(self, image: Any) -> DetectionResult:
         """Run hosted Roboflow Workflow inference on a single image array."""
         h, w = image.shape[:2]
-        runs = run_evn_object_detection_workflow(
-            image,
-            api_key=self._api_key,
-            api_url=self._api_url,
-            workspace_name=self._workspace_name,
-            workflow_id=self._workflow_id,
-            timeout_seconds=self._timeout_seconds,
-            max_retries=self._max_retries,
-            retry_base_delay=self._retry_base_delay,
-        )
+        with observe_inference_duration("roboflow"):
+            runs = run_evn_object_detection_workflow(
+                image,
+                api_key=self._api_key,
+                api_url=self._api_url,
+                workspace_name=self._workspace_name,
+                workflow_id=self._workflow_id,
+                timeout_seconds=self._timeout_seconds,
+                max_retries=self._max_retries,
+                retry_base_delay=self._retry_base_delay,
+            )
         if not runs:
             return DetectionResult(
                 detections=[], image_width=w, image_height=h, frame_count=1
@@ -101,16 +103,17 @@ class ServerRoboflowWorkflowDetector:
 
     def detect_image_url(self, image_url: str) -> DetectionResult:
         """Run hosted Roboflow Workflow inference directly from an HTTPS URL."""
-        runs = run_evn_object_detection_workflow(
-            image_url,
-            api_key=self._api_key,
-            api_url=self._api_url,
-            workspace_name=self._workspace_name,
-            workflow_id=self._workflow_id,
-            timeout_seconds=self._timeout_seconds,
-            max_retries=self._max_retries,
-            retry_base_delay=self._retry_base_delay,
-        )
+        with observe_inference_duration("roboflow"):
+            runs = run_evn_object_detection_workflow(
+                image_url,
+                api_key=self._api_key,
+                api_url=self._api_url,
+                workspace_name=self._workspace_name,
+                workflow_id=self._workflow_id,
+                timeout_seconds=self._timeout_seconds,
+                max_retries=self._max_retries,
+                retry_base_delay=self._retry_base_delay,
+            )
         if not runs:
             return DetectionResult(
                 detections=[], image_width=0, image_height=0, frame_count=1
@@ -133,13 +136,14 @@ class ServerRoboflowWorkflowDetector:
         with Image.open(BytesIO(image_bytes)) as image:
             image.load()
             w, h = image.size
-            runs = run_evn_object_detection_workflow(
-                image,
-                api_key=self._api_key,
-                timeout_seconds=self._timeout_seconds,
-                max_retries=self._max_retries,
-                retry_base_delay=self._retry_base_delay,
-            )
+            with observe_inference_duration("roboflow"):
+                runs = run_evn_object_detection_workflow(
+                    image,
+                    api_key=self._api_key,
+                    timeout_seconds=self._timeout_seconds,
+                    max_retries=self._max_retries,
+                    retry_base_delay=self._retry_base_delay,
+                )
 
         if not runs:
             return DetectionResult(

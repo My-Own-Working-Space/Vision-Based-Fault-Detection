@@ -17,6 +17,7 @@ from shared.schemas.analysis_result import BoundingBox, Detection, DetectionResu
 from shared.services.class_mapping import map_class_to_category
 from shared.services.media_downloader import save_to_temp_file
 from shared.utils.logging import get_logger
+from server_pc.app.metrics import observe_inference_duration
 
 logger = get_logger("server_analysis_runner")
 
@@ -76,13 +77,14 @@ class HarnessAnalysisRunner:
                 checkpoint_dir=self._checkpoint_dir,
                 emit_logs=False,
             )
-            result = runtime.start_run(
-                LocalImageTrigger(
-                    image_path=Path(temp_path),
-                    workflow_ref=self._workflow_ref,
-                    goal="Server image analysis via harness",
+            with observe_inference_duration("harness"):
+                result = runtime.start_run(
+                    LocalImageTrigger(
+                        image_path=Path(temp_path),
+                        workflow_ref=self._workflow_ref,
+                        goal="Server image analysis via harness",
+                    )
                 )
-            )
             if result.status != RunResultStatus.COMPLETED:
                 raise RuntimeError(f"Harness run {result.status.value}: {result.message}")
 

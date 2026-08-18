@@ -18,6 +18,7 @@ from shared.schemas.analysis_result import (
 from shared.services.class_mapping import map_class_to_category
 from shared.utils.bbox import normalize_bbox
 from shared.utils.logging import get_logger
+from server_pc.app.metrics import observe_inference_duration
 
 logger = get_logger("server_detector")
 
@@ -352,7 +353,8 @@ class ServerRfDetrDetector:
         pil_img = PILImage.fromarray(rgb)
 
         # rfdetr returns a Detections object
-        results = self._model.predict(pil_img, threshold=self._conf_threshold)
+        with observe_inference_duration("rfdetr"):
+            results = self._model.predict(pil_img, threshold=self._conf_threshold)
 
         detections: List[Detection] = []
 
@@ -410,7 +412,8 @@ class ServerRfDetrDetector:
         inputs = {k: v.to(self._device) for k, v in inputs.items()}
 
         with torch.no_grad():
-            outputs = self._model(**inputs)
+            with observe_inference_duration("transformers"):
+                outputs = self._model(**inputs)
 
         target_sizes = torch.tensor([[h, w]]).to(self._device)
         results = self._processor.post_process_object_detection(
